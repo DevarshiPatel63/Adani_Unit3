@@ -64,25 +64,29 @@ async def run_agent(user_question: str) -> str:
         # The two `search_*` tools already return real documentation
         # content, so we lose nothing.
         #
-        # Teaching point: WE, the client, decide which tools the LLM ever
-        # sees. That is a real security and UX lever, not just a fix.
+        # WE, the client, decide which tools the LLM ever sees. That is a
+        # real security and UX lever, not just a fix.
         mcp_tools = [t for t in mcp_tools if t.name != "fetch_generic_url_content"]
 
         # Convert each MCP tool into the shape Groq's chat API expects.
         # MCP's `input_schema` IS a JSON Schema, and Groq's
         # `function.parameters` also expects a JSON Schema — so this is
         # almost a straight copy.
-        groq_tools = [
-            {
+        groq_tools = []
+        for t in mcp_tools:
+            description = (t.description or "")[:1024]
+            parameters = t.input_schema or {"type": "object", "properties": {}}
+
+            one_tool = {
                 "type": "function",
                 "function": {
                     "name": t.name,
-                    "description": (t.description or "")[:1024],
-                    "parameters": t.input_schema or {"type": "object", "properties": {}},
+                    "description": description,
+                    "parameters": parameters,
                 },
             }
-            for t in mcp_tools
-        ]
+            groq_tools.append(one_tool)
+
 
         # Seed the conversation. The system prompt is where we teach the
         # model how to behave: use tools sparingly, don't retry failed
@@ -157,12 +161,10 @@ async def run_agent(user_question: str) -> str:
 
 
 if __name__ == "__main__":
-    # Everything after the script name is treated as the question. If
-    # nothing was passed, fall back to a default LangGraph question.
-    question = (
-        " ".join(sys.argv[1:])
-        or "What is a StateGraph in LangGraph and how do you build one?"
-    )
-    print(f"USER: {question}\n")
+    question = input("Enter your question: ")
+
+    print(f"\nUSER: {question}")
+
     answer = asyncio.run(run_agent(question))
+
     print(f"\nANSWER: {answer}")
