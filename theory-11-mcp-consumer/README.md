@@ -153,17 +153,20 @@ function-calling shape. The mapping is nearly identical because Groq's
 MCP's `input_schema` already is.
 
 ```python
-groq_tools = [
-    {
+groq_tools = []
+for t in mcp_tools:
+    description = (t.description or "")[:1024]
+    parameters = t.input_schema or {"type": "object", "properties": {}}
+
+    one_tool = {
         "type": "function",
         "function": {
             "name": t.name,
-            "description": t.description,
-            "parameters": t.input_schema,
+            "description": description,
+            "parameters": parameters,
         },
     }
-    for t in mcp_tools
-]
+    groq_tools.append(one_tool)
 ```
 
 ## Step 5 — Let the LLM choose a tool
@@ -186,30 +189,83 @@ only decided *what* to call. Our code did the calling.
 
 ---
 
-## Step 6 — API vs MCP
+## Step 6 — API vs MCP (talking point)
 
-Run `main.py` again and watch the **PART 4** section at the bottom. It fetches
-the same repository two ways:
+Pause the code for a minute and talk about how what we just built compares
+to a plain REST integration.
 
+To fetch the same repository info without MCP we'd write something like:
+
+```python
+import httpx
+r = httpx.get(f"https://api.github.com/repos/{owner}/{repo}")
+data = r.json()
 ```
-[API]  our code  ─────────▶  api.github.com  (direct GitHub REST API)
-[MCP]  our code  ─▶ MCP ─▶  gitmcp.io       (MCP server on top of GitHub)
-```
 
-The teaching point is **not** "MCP has less code". It is:
+That works — but *we* had to know the endpoint, the response shape, and the
+auth rules. There's no `list_tools()` step, and there's no way for a model
+to *discover* the capability at runtime.
 
-- **API** — a direct, service-specific interface. You know the endpoint, the
-  params, the response shape. Ideal for deterministic backend integrations.
-- **MCP** — a standardized, *discoverable* interface. An AI application can
-  ask "what can you do?" at runtime and decide which capability to invoke.
-  Ideal for agent workflows.
+|  | Direct REST API | MCP |
+|---|---|---|
+| Who's the primary consumer | Traditional software | AI / agents |
+| How you find what's available | Read the docs, hard-code endpoints | `list_tools()` at runtime |
+| Contract | OpenAPI or hand-written | JSON Schema in `input_schema` |
+| Best for | Deterministic backend jobs | Agents that must *choose* |
 
-They coexist. GitMCP itself calls the GitHub REST API behind the scenes.
-**MCP does not replace APIs.**
+**MCP does not replace REST APIs.** GitMCP itself calls the GitHub REST
+API under the hood. MCP is a different *envelope* aimed at AI consumers.
 
 ---
 
-## Student challenge
+## Student exercise — try a DIFFERENT MCP server
+
+The point of MCP is that it's a standard. Our client code shouldn't care
+*which* MCP server it talks to — swap the URL and everything else should
+still work.
+
+**The task:** find any public MCP server other than GitMCP, connect to it,
+list its tools, and successfully call one. Save your work as `my_mcp.py`.
+
+**How to start:** copy `my_mcp_template.py` to `my_mcp.py` and fill in the
+four TODOs. You do NOT need to install anything new — `mcp` is already in
+the venv.
+
+```bash
+cp my_mcp_template.py my_mcp.py
+# edit my_mcp.py, then:
+python my_mcp.py
+```
+
+**Servers you can try** (all public, no login required for the demo):
+
+| Server | URL | What it does |
+|---|---|---|
+| **DeepWiki** | `https://mcp.deepwiki.com/mcp` | Wiki-style docs for any GitHub repo |
+| **Context7** | `https://mcp.context7.com/mcp` | Up-to-date docs for popular libraries |
+| your own find | `?` | search "public mcp servers" and pick one |
+
+If the server you pick asks for an API key or OAuth, that is a real
+learning moment — MCP standardises the *shape* but each server sets its
+own auth. For today, pick one that's public.
+
+**Success looks like:**
+
+1. Your terminal prints the new server's tool list.
+2. You called at least one tool with the arguments it required.
+3. Real text from that server appeared in your terminal.
+
+**Questions to think about afterwards:**
+
+1. How different was your code from `main.py`? Which lines actually changed?
+2. Did you have to read the server's docs to know what tool to call — or
+   did `list_tools()` and `input_schema` tell you everything?
+3. If a classmate picked a different server, could you swap `my_mcp.py`
+   files and each run the other's code? Why or why not?
+
+---
+
+## Bonus challenges
 
 Pick **one** and change only a few lines:
 
@@ -241,6 +297,8 @@ Pick **one** and change only a few lines:
 | Tool not found by the model | Names are templated per repo. Change the demo repo → tool names change. Always list tools first. |
 | `invalid model` from Groq | Set `GROQ_MODEL=openai/gpt-oss-120b` (or `openai/gpt-oss-20b`). |
 | `RuntimeError: asyncio.run() cannot be called from a running event loop` | You're in a Jupyter cell — use `await run_agent(...)` instead, or run from the terminal. |
+| `my_mcp.py`: server asks for an API key | Pick a different public server for this exercise — auth is a separate topic. |
+| `my_mcp.py`: `KeyError` in tool arguments | Look at the tool's `input_schema.required` in your `list_tools()` output — you're missing a field. |
 
 ---
 
