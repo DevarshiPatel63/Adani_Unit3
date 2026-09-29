@@ -56,17 +56,19 @@ async def run_agent(user_question: str) -> str:
         # Discover the tools the third-party server offers. We do this on
         # every run because the server, not our code, is the source of
         # truth for what tools exist.
+        # mcp_tools = [t for t in mcp_tools if t.name != "fetch_generic_url_content"]
+
         mcp_tools = (await mcp.list_tools()).tools
 
-        # We deliberately hide `fetch_generic_url_content` from the LLM.
-        # When it's exposed, the model tends to guess URLs that don't
-        # exist, wastes turns on failed fetches, and derails the demo.
-        # The two `search_*` tools already return real documentation
-        # content, so we lose nothing.
+        # We hand ALL four GitMCP tools to the LLM, including
+        # `fetch_generic_url_content`. That tool used to derail the demo
+        # because the model guessed random URLs that 404'd. Instead of
+        # HIDING it, we now TEACH the LLM how to use it — the system
+        # prompt below tells it exactly which raw-README URL to try when
+        # the documentation tools come up empty.
         #
-        # WE, the client, decide which tools the LLM ever sees. That is a
-        # real security and UX lever, not just a fix.
-        mcp_tools = [t for t in mcp_tools if t.name != "fetch_generic_url_content"]
+        # The lever is the same: WE, the client, decide what the LLM
+        # sees AND what hints it starts with.
 
         # Convert each MCP tool into the shape Groq's chat API expects.
         # MCP's `input_schema` IS a JSON Schema, and Groq's
@@ -97,9 +99,14 @@ async def run_agent(user_question: str) -> str:
                 "content": (
                     "You are a helpful assistant. You have access to tools from a "
                     "third-party MCP server that can search documentation and code "
-                    "for a specific GitHub repository. "
-                    "Call at most 1–2 tools. As soon as you have enough information "
+                    f"for the GitHub repository {REPO}. "
+                    "Call at most 2–3 tools. As soon as you have enough information "
                     "to answer, stop calling tools and reply directly. "
+                    "If the documentation and code-search tools return nothing, "
+                    "the repository may lack a curated docs bundle. In that case, "
+                    "fall back to `fetch_generic_url_content` with the raw README "
+                    f"URL: https://raw.githubusercontent.com/{REPO}/main/README.md "
+                    "(try `master` instead of `main` if that 404s). "
                     "If a tool call fails, do not retry the same URL — answer with "
                     "what you already have. Be concise."
                 ),
